@@ -1,0 +1,14 @@
+{
+  "name": "amazon-screenshot-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright automation for Amazon marketplace screenshots",
+  "scripts": {
+    "capture": "node screenshot.js",
+    "check": "node --check screenshot.js",
+    "smoke": "MAX_CAPTURES=1 MARKETS=UK PAGES=home DEVICES=desktop node screenshot.js"
+  },
+  "dependencies": {
+    "playwright": "^1.54.2"
+  }
+}
