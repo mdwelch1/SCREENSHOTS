@@ -44,3 +44,25 @@ jobs:
           fi
 
           echo "Prompt file found"
+        description: "What to run"
+        required: false
+        default: "validate"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        uses: actions/checkout@v4
+
+      - name: Show selected target
+        run: |
+          echo "Running manual workflow"
+          echo "Target: ${{ github.event.inputs.target }}"
+
+      - name: Verify automation prompt exists
+        run: test -f amazon_screenshot_automation_prompt.md
