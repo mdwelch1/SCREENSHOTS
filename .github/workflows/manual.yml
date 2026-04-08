@@ -2,37 +2,67 @@ name: Manual Automation
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: What to run
+        required: false
+        default: validate
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   validate:
     name: Validate prompt file
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REPO: ${{ github.repository }}
-      REF: ${{ github.sha }}
-      FILE_PATH: amazon_screenshot_automation_prompt.md
     steps:
-      - name: Show selected run context
+      - id: show_target
+        name: Show selected target
         run: |
           echo "Running manual workflow"
-          echo "Repository: ${REPO}"
-          echo "Ref: ${REF}"
+          echo "Target: ${{ inputs.target }}"
 
-      - name: Verify automation prompt exists via GitHub API
+      - id: verify_prompt_via_api
+        name: Verify automation prompt exists via GitHub API
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          REF: ${{ github.sha }}
+          FILE_PATH: amazon_screenshot_automation_prompt.md
         run: |
           set -euo pipefail
-          url="https://api.github.com/repos/${REPO}/contents/${FILE_PATH}?ref=${REF}"
-          status=$(curl -sS -o /tmp/file.json -w "%{http_code}" \
+          URL="https://api.github.com/repos/${REPO}/contents/${FILE_PATH}?ref=${REF}"
+          STATUS=$(curl -sS -o /tmp/file.json -w "%{http_code}" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "$url")
+            "$URL")
 
-          if [ "$status" != "200" ]; then
-            echo "Expected ${FILE_PATH} at ref ${REF}, got HTTP ${status}" >&2
+          if [ "$STATUS" != "200" ]; then
+            echo "Expected ${FILE_PATH} at ref ${REF}, got HTTP ${STATUS}" >&2
             cat /tmp/file.json >&2 || true
             exit 1
           fi
 
           echo "Prompt file found"
+        description: "What to run"
+        required: false
+        default: "validate"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        uses: actions/checkout@v4
+
+      - name: Show selected target
+        run: |
+          echo "Running manual workflow"
+          echo "Target: ${{ github.event.inputs.target }}"
+
+      - name: Verify automation prompt exists
+        run: test -f amazon_screenshot_automation_prompt.md
