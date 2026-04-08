@@ -19,6 +19,13 @@ const RUN_DATE = new Date().toISOString().slice(0, 10);
 const START_TS = new Date().toISOString();
 const OUTPUT_DIR = process.env.OUTPUT_DIR || path.resolve(process.cwd(), "amazon-screenshots");
 const EXTRA_WAIT_MS = 5000;
+const MAX_RETRIES = Number.parseInt(process.env.MAX_RETRIES || "3", 10);
+const STEP_TIMEOUT_MS = 60000;
+const MARKET_FILTER = new Set((process.env.MARKETS || "").split(",").map((v) => v.trim().toUpperCase()).filter(Boolean));
+const LANGUAGE_FILTER = new Set((process.env.LANGUAGES || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
+const DEVICE_FILTER = new Set((process.env.DEVICES || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
+const PAGE_FILTER = new Set((process.env.PAGES || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
+const MAX_CAPTURES = Number.parseInt(process.env.MAX_CAPTURES || "0", 10);
 const MAX_RETRIES = 3;
 const STEP_TIMEOUT_MS = 60000;
 
@@ -83,6 +90,8 @@ async function clickIfVisible(page, selectors) {
   for (const selector of selectors) {
     const locator = page.locator(selector).first();
     try {
+      if (await locator.isVisible()) {
+        await locator.click({ timeout: 5000 });
       if (await locator.isVisible({ timeout: 1500 })) {
         await locator.click({ timeout: 2000 });
         return true;
@@ -142,6 +151,11 @@ async function autoScroll(page, requireDealGrid = false) {
       await page.evaluate(() => {
         const possibleCards = Array.from(
           document.querySelectorAll(
+            "[data-asin], [class*='DealGridItem-module__card_'], .dealContainer, .octopus-pc-card"
+          )
+        );
+        if (possibleCards.length) {
+          possibleCards[possibleCards.length - 1].scrollIntoView({ behavior: "auto", block: "end" });
             "[data-asin], .DealGridItem-module__card_*, .dealContainer, .octopus-pc-card"
           )
         );
@@ -161,6 +175,7 @@ async function autoScroll(page, requireDealGrid = false) {
     }
   }
 
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await wait(500);
 }
@@ -175,6 +190,7 @@ async function isLikelyBlankPage(page, pageTypeSlug) {
       document.querySelector("#gw-layout, #desktop-hero, .a-carousel, .hero, [data-csa-c-slot-id]")
     );
 
+    const dealCards = document.querySelectorAll("[data-asin], [class*='DealGridItem-module__card_'], .dealContainer").length;
     const dealCards = document.querySelectorAll("[data-asin], .DealGridItem-module__card_*, .dealContainer").length;
     const looksBlank = !hasText || images < 3;
 
@@ -327,11 +343,13 @@ async function main() {
   await ensureDir(OUTPUT_DIR);
   const metadata = [];
   const logLines = [`Run started: ${START_TS}`];
+  let captureCount = 0;
 
   const browser = await chromium.launch({ headless: true });
 
   try {
     for (const device of VIEWPORTS) {
+      if (DEVICE_FILTER.size && !DEVICE_FILTER.has(device.name)) continue;
       const context = await browser.newContext({
         viewport: { width: device.width, height: device.height },
         userAgent: device.userAgent,
@@ -342,6 +360,7 @@ async function main() {
       });
 
       for (const market of MARKETPLACES) {
+        if (MARKET_FILTER.size && !MARKET_FILTER.has(market.code)) continue;
         const discoveryPage = await context.newPage();
         await discoveryPage.goto(`https://${market.domain}/`, {
           waitUntil: "domcontentloaded",
@@ -350,12 +369,19 @@ async function main() {
         await dismissBlockingPopups(discoveryPage);
         await waitForPageLoaded(discoveryPage);
 
+        const languages = (await collectAvailableLanguages(discoveryPage, market.defaultLanguage))
+          .filter((lang) => !LANGUAGE_FILTER.size || LANGUAGE_FILTER.has(lang));
         const languages = await collectAvailableLanguages(discoveryPage, market.defaultLanguage);
         logLines.push(`${market.code} [${device.name}] languages => ${languages.join(",")}`);
         await discoveryPage.close();
 
         for (const language of languages) {
           for (const pageType of PAGE_TYPES) {
+            if (PAGE_FILTER.size && !PAGE_FILTER.has(pageType.slug)) continue;
+            if (MAX_CAPTURES > 0 && captureCount >= MAX_CAPTURES) {
+              logLines.push(`Reached MAX_CAPTURES=${MAX_CAPTURES}, stopping early.`);
+              break;
+            }
             const page = await context.newPage();
             logLines.push(`Capturing ${market.code}/${language}/${pageType.slug}/${device.name}`);
 
@@ -368,6 +394,17 @@ async function main() {
               outDir: OUTPUT_DIR,
               metadata,
             });
+            captureCount += 1;
+
+            await page.close();
+          }
+          if (MAX_CAPTURES > 0 && captureCount >= MAX_CAPTURES) break;
+        }
+        if (MAX_CAPTURES > 0 && captureCount >= MAX_CAPTURES) break;
+      }
+
+      await context.close();
+      if (MAX_CAPTURES > 0 && captureCount >= MAX_CAPTURES) break;
 
             await page.close();
           }
