@@ -26,6 +26,8 @@ const LANGUAGE_FILTER = new Set((process.env.LANGUAGES || "").split(",").map((v)
 const DEVICE_FILTER = new Set((process.env.DEVICES || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
 const PAGE_FILTER = new Set((process.env.PAGES || "").split(",").map((v) => v.trim().toLowerCase()).filter(Boolean));
 const MAX_CAPTURES = Number.parseInt(process.env.MAX_CAPTURES || "0", 10);
+const MAX_RETRIES = 3;
+const STEP_TIMEOUT_MS = 60000;
 
 const MARKETPLACES = [
   { code: "UK", domain: "amazon.co.uk", defaultLanguage: "en" },
@@ -90,6 +92,8 @@ async function clickIfVisible(page, selectors) {
     try {
       if (await locator.isVisible()) {
         await locator.click({ timeout: 5000 });
+      if (await locator.isVisible({ timeout: 1500 })) {
+        await locator.click({ timeout: 2000 });
         return true;
       }
     } catch {
@@ -152,6 +156,11 @@ async function autoScroll(page, requireDealGrid = false) {
         );
         if (possibleCards.length) {
           possibleCards[possibleCards.length - 1].scrollIntoView({ behavior: "auto", block: "end" });
+            "[data-asin], .DealGridItem-module__card_*, .dealContainer, .octopus-pc-card"
+          )
+        );
+        if (possibleCards.length) {
+          possibleCards[possibleCards.length - 1].scrollIntoView({ behavior: "instant", block: "end" });
         }
       });
       await wait(300);
@@ -167,6 +176,7 @@ async function autoScroll(page, requireDealGrid = false) {
   }
 
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "auto" }));
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await wait(500);
 }
 
@@ -181,6 +191,7 @@ async function isLikelyBlankPage(page, pageTypeSlug) {
     );
 
     const dealCards = document.querySelectorAll("[data-asin], [class*='DealGridItem-module__card_'], .dealContainer").length;
+    const dealCards = document.querySelectorAll("[data-asin], .DealGridItem-module__card_*, .dealContainer").length;
     const looksBlank = !hasText || images < 3;
 
     if (type === "event") {
@@ -360,6 +371,7 @@ async function main() {
 
         const languages = (await collectAvailableLanguages(discoveryPage, market.defaultLanguage))
           .filter((lang) => !LANGUAGE_FILTER.size || LANGUAGE_FILTER.has(lang));
+        const languages = await collectAvailableLanguages(discoveryPage, market.defaultLanguage);
         logLines.push(`${market.code} [${device.name}] languages => ${languages.join(",")}`);
         await discoveryPage.close();
 
@@ -393,6 +405,13 @@ async function main() {
 
       await context.close();
       if (MAX_CAPTURES > 0 && captureCount >= MAX_CAPTURES) break;
+
+            await page.close();
+          }
+        }
+      }
+
+      await context.close();
     }
   } finally {
     await browser.close();
