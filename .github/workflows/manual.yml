@@ -4,30 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: What to run
+        description: "What to run"
         required: false
-        default: validate
+        default: "validate"
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   validate:
-    name: Validate prompt file
     runs-on: ubuntu-latest
     steps:
-      - id: checkout
-        name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
-      - id: show_target
-        name: Show selected target
+      - name: Show selected target
         run: |
           echo "Running manual workflow"
-          echo "Target: ${{ inputs.target }}"
+          echo "Target: ${{ github.event.inputs.target }}"
 
-      - id: verify_prompt
-        name: Verify automation prompt exists
-        run: |
-          test -f amazon_screenshot_automation_prompt.md
-          echo "Prompt file found"
+      - name: Verify automation prompt exists
+        run: test -f amazon_screenshot_automation_prompt.md
